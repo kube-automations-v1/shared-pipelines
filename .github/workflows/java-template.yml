@@ -9,26 +9,52 @@ on:
         default: '21'
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout código fonte
+        uses: actions/checkout@v4
       
-      - name: Log in to GHCR
+      - name: Login no GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      # 1. Gera a imagem com o "hash" único do commit (github.sha)
+      - name: Build e Push da imagem Docker
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          # github.repository pega automaticamente o nome do repo que chamou o template
-          tags: ghcr.io/${{ github.repository }}:latest
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+      # 2. Clona o repositório GitOps (precisa do token GITOPS_PAT criado na org)
+      - name: Checkout do repositório GitOps
+        uses: actions/checkout@v4
+        with:
+          repository: kube-automations-v1/cluster-gitops
+          token: ${{ secrets.GITOPS_PAT }}
+          path: cluster-gitops
+
+      # 3. Altera a versão no Kustomize e faz o commit automático
+      - name: Atualizar versão no ArgoCD
+        run: |
+          cd cluster-gitops/apps/${{ github.event.repository.name }}
+          
+          # Troca a linha "newTag: ..." pela nova versão
+          sed -i "s/newTag:.*/newTag: ${{ github.sha }}/" kustomization.yaml
+          
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add kustomization.yaml
+          
+          # Faz o commit apenas se a versão realmente mudou
+          git diff --quiet && git diff --staged --quiet || (git commit -m "auto: deploy ${{ github.sha }} para ${{ github.event.repository.name }}" && git push)
