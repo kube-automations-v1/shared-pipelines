@@ -7,6 +7,9 @@ on:
         required: false
         type: string
         default: '21'
+    secrets:
+      GITOPS_PAT:
+        required: true
 
 jobs:
   build-and-deploy:
