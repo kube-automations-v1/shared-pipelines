@@ -8,6 +8,7 @@ on: { push: { branches: [main] } }
 jobs:
   pipeline:
     uses: kube-automations-v1/shared-pipelines/.github/workflows/<tech>-template.yml@main
+    permissions: { contents: read, packages: write }   # obrigatório (workflow reutilizável aninhado)
     secrets: inherit   # precisa de GITOPS_PAT na org
 ```
 
@@ -23,5 +24,6 @@ que cria `apps/base-<nome>` no cluster-gitops com StatefulSet, PVC persistente e
 jobs:
   pipeline:
     uses: kube-automations-v1/shared-pipelines/.github/workflows/postgres-template.yml@main
+    permissions: { contents: read, packages: write }
     secrets: inherit
 ```

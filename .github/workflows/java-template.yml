@@ -29,6 +29,9 @@ jobs:
 
   deploy:
     needs: test
+    permissions:
+      contents: read
+      packages: write
     uses: kube-automations-v1/shared-pipelines/.github/workflows/_deploy.yml@main
     with:
       tech: java
