@@ -6,7 +6,11 @@ on:
     inputs:
       tech:
         required: true
-        type: string # java | go | node | graalvm
+        type: string # java | go | node | graalvm | postgres
+      kind:
+        required: false
+        type: string # service (padrão) | base
+        default: service
     secrets:
       GITOPS_PAT:
         required: true
@@ -66,8 +70,12 @@ jobs:
       - name: Atualizar versão no ArgoCD
         working-directory: cluster-gitops
         run: |
-          # Primeiro deploy: cria apps/<ms> em http://automations/<tecnologia>/<ms>
-          scripts/new-app.sh "${{ inputs.tech }}" "$MS" "$IMAGE" "${{ github.sha }}"
+          # Primeiro deploy: cria apps/<ms> (serviço: http://automations/<tecnologia>/<ms>; base: banco com PVC)
+          if [ "${{ inputs.kind }}" = base ]; then
+            scripts/new-base.sh "${{ inputs.tech }}" "$MS" "$IMAGE" "${{ github.sha }}"
+          else
+            scripts/new-app.sh "${{ inputs.tech }}" "$MS" "$IMAGE" "${{ github.sha }}"
+          fi
 
           sed -i "s|newTag:.*|newTag: ${{ github.sha }}|" "apps/$MS/kustomization.yaml"
 

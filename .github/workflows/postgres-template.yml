@@ -1,0 +1,39 @@
+name: PostgreSQL base CI/CD Template
+
+# Para repos de bases (nome base-*): build da imagem (Dockerfile do repo + initdb/), smoke test e deploy via GitOps.
+on:
+  workflow_call:
+    secrets:
+      GITOPS_PAT:
+        required: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dockerfile padrão (fallback)
+        if: hashFiles('Dockerfile') == ''
+        uses: actions/checkout@v4
+        with:
+          repository: kube-automations-v1/shared-pipelines
+          token: ${{ secrets.GITOPS_PAT }}
+          path: .shared-pipelines
+      - name: Build
+        run: |
+          f=Dockerfile; [ -f "$f" ] || f=.shared-pipelines/dockerfiles/postgres.Dockerfile
+          docker build -f "$f" -t base-test .
+      - name: Smoke test (sobe o banco e executa initdb/)
+        run: |
+          docker run -d --name pg -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test base-test
+          for i in $(seq 1 30); do docker exec pg pg_isready -U postgres -d test && ok=1 && break; sleep 2; done
+          [ "${ok:-}" = 1 ] || { docker logs pg; exit 1; }
+          docker exec pg psql -U postgres -d test -c 'select 1'
+
+  deploy:
+    needs: test
+    uses: kube-automations-v1/shared-pipelines/.github/workflows/_deploy.yml@main
+    with:
+      tech: postgres
+      kind: base
+    secrets: inherit
