@@ -1,0 +1,36 @@
+name: GraalVM CI/CD Template
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        required: false
+        type: string
+        default: '21'
+    secrets:
+      GITOPS_PAT:
+        required: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: graalvm
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: maven
+      - name: Testes
+        run: |
+          if [ -f pom.xml ]; then mvn -B verify
+          elif [ -f gradlew ]; then ./gradlew test
+          else echo "sem pom.xml/gradlew, pulando testes"; fi
+
+  deploy:
+    needs: test
+    uses: kube-automations-v1/shared-pipelines/.github/workflows/_deploy.yml@main
+    with:
+      tech: graalvm
+    secrets: inherit

@@ -1,0 +1,31 @@
+name: Node CI/CD Template
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        required: false
+        type: string
+        default: '22'
+    secrets:
+      GITOPS_PAT:
+        required: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm test --if-present
+
+  deploy:
+    needs: test
+    uses: kube-automations-v1/shared-pipelines/.github/workflows/_deploy.yml@main
+    with:
+      tech: node
+    secrets: inherit

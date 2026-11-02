@@ -1,0 +1,30 @@
+name: Go CI/CD Template
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: false
+        type: string
+        default: '1.23'
+    secrets:
+      GITOPS_PAT:
+        required: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+      - run: go vet ./...
+      - run: go test ./...
+
+  deploy:
+    needs: test
+    uses: kube-automations-v1/shared-pipelines/.github/workflows/_deploy.yml@main
+    with:
+      tech: go
+    secrets: inherit

@@ -1,0 +1,84 @@
+name: Build image & GitOps deploy (interno)
+
+# Reutilizado por java/node/go/graalvm-template.yml. Não chamar diretamente.
+on:
+  workflow_call:
+    inputs:
+      tech:
+        required: true
+        type: string # java | go | node | graalvm
+    secrets:
+      GITOPS_PAT:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+      MS: ${{ github.event.repository.name }}
+    steps:
+      - name: Checkout código fonte
+        uses: actions/checkout@v4
+
+      # Se o repo não tem Dockerfile, usa o padrão da tecnologia
+      - name: Dockerfile padrão (fallback)
+        if: hashFiles('Dockerfile') == ''
+        uses: actions/checkout@v4
+        with:
+          repository: kube-automations-v1/shared-pipelines
+          token: ${{ secrets.GITOPS_PAT }}
+          path: .shared-pipelines
+
+      - name: Selecionar Dockerfile
+        id: df
+        run: |
+          if [ -f Dockerfile ]; then echo "file=Dockerfile" >> "$GITHUB_OUTPUT"
+          else echo "file=.shared-pipelines/dockerfiles/${{ inputs.tech }}.Dockerfile" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Login no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build e Push da imagem Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ steps.df.outputs.file }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+
+      - name: Checkout do repositório GitOps
+        uses: actions/checkout@v4
+        with:
+          repository: kube-automations-v1/cluster-gitops
+          token: ${{ secrets.GITOPS_PAT }}
+          path: cluster-gitops
+
+      - name: Atualizar versão no ArgoCD
+        working-directory: cluster-gitops
+        run: |
+          # Primeiro deploy: cria apps/<ms> em http://automations/<tecnologia>/<ms>
+          scripts/new-app.sh "${{ inputs.tech }}" "$MS" "$IMAGE" "${{ github.sha }}"
+
+          sed -i "s|newTag:.*|newTag: ${{ github.sha }}|" "apps/$MS/kustomization.yaml"
+
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add "apps/$MS"
+          git diff --cached --quiet && exit 0
+          git commit -m "auto: deploy ${{ github.sha }} para $MS"
+          # evita falha quando dois deploys concorrentes fazem push
+          for i in 1 2 3; do
+            git push && exit 0
+            git pull --rebase
+          done
+          exit 1
